@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "./lib/supabase";
 
 type Aufgabe = {
   id: number;
@@ -16,7 +17,7 @@ type Person = {
   pin: string;
 };
 
-type SlotTyp = "waffe" | "amulett" | "helm" | "ruestung" | "schuhe";
+type SlotTyp = "waffe" | "schmuck" | "kopfbedeckung" | "kleidung" | "schuhe";
 
 type BonusTyp =
   | "xp_eigen_prozent"
@@ -45,9 +46,21 @@ type Faehigkeit = {
   beschreibung: string;
 };
 
+// Vollständiger, persistierbarer App-Zustand (wird als ein JSON-Blob in Supabase gespeichert)
+type GameState = {
+  personen: Person[];
+  aufgaben: Aufgabe[];
+  xp: number[];
+  ausruestung: Ausruestung[];
+  faehigkeiten: Faehigkeit[];
+  inventar: Record<number, number[]>;
+  ausgeruestet: Record<number, Partial<Record<SlotTyp, number>>>;
+  erlernteFaehigkeiten: Record<number, number[]>;
+};
+
 const startPersonen: Person[] = [
-  { id: 0, name: "Martin", pin: "1111" },
-  { id: 1, name: "Anna", pin: "2222" },
+  { id: 0, name: "Alex", pin: "1111" },
+  { id: 1, name: "Partner", pin: "2222" },
 ];
 
 const startAufgaben: Aufgabe[] = [
@@ -60,8 +73,8 @@ const startAufgaben: Aufgabe[] = [
 const startAusruestung: Ausruestung[] = [
   {
     id: 1,
-    name: "Amulett der Eile",
-    slot: "amulett",
+    name: "Schmuck der Eile",
+    slot: "schmuck",
     emoji: "💍",
     kosten: 80,
     bonusTyp: "frist_bonus_tage",
@@ -114,9 +127,9 @@ const C = {
 
 const SLOT_LABEL: Record<SlotTyp, string> = {
   waffe: "⚔️ Waffe",
-  amulett: "💍 Amulett",
-  helm: "🪖 Helm",
-  ruestung: "🛡️ Rüstung",
+  schmuck: "💍 Schmuck",
+  kopfbedeckung: "🪖 Kopfbedeckung",
+  kleidung: "🛡️ Kleidung",
   schuhe: "👢 Schuhe",
 };
 
@@ -160,6 +173,94 @@ export default function App() {
   const [inventar, setInventar] = useState<Record<number, number[]>>({ 0: [], 1: [] });
   const [ausgeruestet, setAusgeruestet] = useState<Record<number, Partial<Record<SlotTyp, number>>>>({ 0: {}, 1: {} });
   const [erlernteFaehigkeiten, setErlernteFaehigkeiten] = useState<Record<number, number[]>>({ 0: [], 1: [] });
+
+  // --- Supabase Sync ---
+  const [geladen, setGeladen] = useState(false);
+  const [syncFehler, setSyncFehler] = useState<string | null>(null);
+
+  // Initiales Laden aus der Datenbank
+  useEffect(() => {
+    async function laden() {
+      const { data, error } = await supabase
+        .from("game_state")
+        .select("data")
+        .eq("id", "main")
+        .single();
+
+      if (error) {
+        console.error("Fehler beim Laden:", error);
+        setSyncFehler("Konnte gespeicherte Daten nicht laden. Lokaler Stand wird genutzt.");
+        setGeladen(true);
+        return;
+      }
+
+      const d = data?.data as Partial<GameState> | null;
+      if (d && Object.keys(d).length > 0) {
+        if (d.personen) setPersonen(d.personen);
+        if (d.aufgaben) setAufgaben(d.aufgaben);
+        if (d.xp) setXp(d.xp);
+        if (d.ausruestung) setAusruestung(d.ausruestung);
+        if (d.faehigkeiten) setFaehigkeiten(d.faehigkeiten);
+        if (d.inventar) setInventar(d.inventar);
+        if (d.ausgeruestet) setAusgeruestet(d.ausgeruestet);
+        if (d.erlernteFaehigkeiten) setErlernteFaehigkeiten(d.erlernteFaehigkeiten);
+      }
+      setGeladen(true);
+    }
+    laden();
+  }, []);
+
+  // Speichern bei Änderungen (debounced, erst nach initialem Laden aktiv)
+  useEffect(() => {
+    if (!geladen) return;
+
+    const timeout = setTimeout(async () => {
+      const state: GameState = {
+        personen, aufgaben, xp, ausruestung, faehigkeiten,
+        inventar, ausgeruestet, erlernteFaehigkeiten,
+      };
+      const { error } = await supabase
+        .from("game_state")
+        .update({ data: state, updated_at: new Date().toISOString() })
+        .eq("id", "main");
+      if (error) {
+        console.error("Fehler beim Speichern:", error);
+        setSyncFehler("Änderungen konnten nicht gespeichert werden.");
+      } else {
+        setSyncFehler(null);
+      }
+    }, 600);
+
+    return () => clearTimeout(timeout);
+  }, [personen, aufgaben, xp, ausruestung, faehigkeiten, inventar, ausgeruestet, erlernteFaehigkeiten, geladen]);
+
+  // Live-Updates von anderen Geräten übernehmen
+  useEffect(() => {
+    const channel = supabase
+      .channel("game_state_changes")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "game_state", filter: "id=eq.main" },
+        (payload) => {
+          const d = payload.new.data as GameState;
+          if (!d) return;
+          setPersonen(d.personen);
+          setAufgaben(d.aufgaben);
+          setXp(d.xp);
+          setAusruestung(d.ausruestung);
+          setFaehigkeiten(d.faehigkeiten);
+          setInventar(d.inventar);
+          setAusgeruestet(d.ausgeruestet);
+          setErlernteFaehigkeiten(d.erlernteFaehigkeiten);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+  // --- Ende Supabase Sync ---
 
   const [seite, setSeite] = useState<"aufgaben" | "mitglieder" | "shop" | "admin">("aufgaben");
   const [shopUnterseite, setShopUnterseite] = useState<"inventar" | "ausruestung" | "faehigkeiten">("inventar");
@@ -467,11 +568,25 @@ export default function App() {
     maxWidth: "500px", margin: "0 auto", background: C.bg, minHeight: "100vh",
   };
 
+  if (!geladen) {
+    return (
+      <div style={{ ...wrapper, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: C.textLight }}>⏳ Lade Daten…</p>
+      </div>
+    );
+  }
+
   if (eingeloggtId === null) {
     return (
       <div style={{ ...wrapper, display: "flex", flexDirection: "column", justifyContent: "center" }}>
         <h1 style={{ color: C.text, textAlign: "center", marginBottom: "4px" }}>🏠 Haushalts-Quest</h1>
         <p style={{ color: C.textLight, textAlign: "center", marginBottom: "30px" }}>Wer bist du?</p>
+
+        {syncFehler && (
+          <div style={{ background: C.danger, color: "white", padding: "8px 14px", borderRadius: "8px", marginBottom: "16px", textAlign: "center", fontSize: "12px" }}>
+            ⚠️ {syncFehler}
+          </div>
+        )}
 
         {loginModus === "start" && (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -555,6 +670,12 @@ export default function App() {
         </button>
       </div>
       <p style={{ color: C.textLight, marginTop: 0, marginBottom: "16px", fontSize: "14px" }}>Gemeinsam den Haushalt meistern</p>
+
+      {syncFehler && (
+        <div style={{ background: C.danger, color: "white", padding: "8px 14px", borderRadius: "8px", marginBottom: "12px", textAlign: "center", fontSize: "12px" }}>
+          ⚠️ {syncFehler}
+        </div>
+      )}
 
       {meldung && (
         <div style={{ background: C.primary, color: "white", padding: "10px 16px", borderRadius: "10px", marginBottom: "16px", textAlign: "center", fontSize: "14px" }}>
@@ -719,7 +840,7 @@ export default function App() {
           {shopUnterseite === "inventar" && (
             <div>
               <p style={{ fontSize: "13px", color: C.textLight, marginBottom: "10px" }}>Deine Ausrüstungs-Slots:</p>
-              {(["waffe", "amulett", "helm", "ruestung", "schuhe"] as SlotTyp[]).map((slot) => {
+              {(["waffe", "schmuck", "kopfbedeckung", "kleidung", "schuhe"] as SlotTyp[]).map((slot) => {
                 const aktiveId = ausgeruestet[eingeloggtId]?.[slot];
                 const aktiv = aktiveId ? ausruestung.find((a) => a.id === aktiveId) : null;
                 return (
@@ -886,7 +1007,7 @@ export default function App() {
               <label style={{ color: C.textLight, fontSize: "13px" }}>Emoji</label>
               <input style={input} value={neueAusruestung.emoji} onChange={(e) => setNeueAusruestung((p) => ({ ...p, emoji: e.target.value }))} />
               <label style={{ color: C.textLight, fontSize: "13px" }}>Name</label>
-              <input style={input} placeholder="z.B. Helm der Klarheit" value={neueAusruestung.name} onChange={(e) => setNeueAusruestung((p) => ({ ...p, name: e.target.value }))} />
+              <input style={input} placeholder="z.B. Kopfbedeckung der Klarheit" value={neueAusruestung.name} onChange={(e) => setNeueAusruestung((p) => ({ ...p, name: e.target.value }))} />
               <label style={{ color: C.textLight, fontSize: "13px" }}>Slot</label>
               <select style={input} value={neueAusruestung.slot} onChange={(e) => setNeueAusruestung((p) => ({ ...p, slot: e.target.value as SlotTyp }))}>
                 {Object.entries(SLOT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
