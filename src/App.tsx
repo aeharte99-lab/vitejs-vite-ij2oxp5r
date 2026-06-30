@@ -46,8 +46,8 @@ type Faehigkeit = {
 };
 
 const startPersonen: Person[] = [
-  { id: 0, name: "Alex", pin: "1111" },
-  { id: 1, name: "Partner", pin: "2222" },
+  { id: 0, name: "Martin", pin: "1111" },
+  { id: 1, name: "Anna", pin: "2222" },
 ];
 
 const startAufgaben: Aufgabe[] = [
