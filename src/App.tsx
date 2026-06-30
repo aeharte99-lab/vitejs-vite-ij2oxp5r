@@ -64,10 +64,16 @@ const startPersonen: Person[] = [
 ];
 
 const startAufgaben: Aufgabe[] = [
-  { id: 1, name: "Küche putzen", raum: "Küche", punkte: 30, zyklus: 7, zustaendig: 0, wechselnd: true },
-  { id: 2, name: "Bad reinigen", raum: "Bad", punkte: 40, zyklus: 14, zustaendig: 1, wechselnd: true },
-  { id: 3, name: "Staubsaugen", raum: "Wohnzimmer", punkte: 20, zyklus: 7, zustaendig: 0, wechselnd: false },
-  { id: 4, name: "Müll rausbringen", raum: "Küche", punkte: 10, zyklus: 3, zustaendig: 1, wechselnd: true },
+  { id: 1, name: "Spülmaschine", raum: "Küche", punkte: 20, zyklus: 7, zustaendig: 0, wechselnd: true },
+  { id: 2, name: "Küche putzen", raum: "Küche", punkte: 25, zyklus: 14, zustaendig: 1, wechselnd: true },
+  { id: 3, name: "Staubsaugen", raum: "Wohnung", punkte: 30, zyklus: 7, zustaendig: 0, wechselnd: true },
+  { id: 4, name: "Wischen", raum: "Wohnung", punkte: 35, zyklus: 30, zustaendig: 1, wechselnd: true },
+  { id: 5, name: "Toilette putzen", raum: "Bad", punkte: 25, zyklus: 7, zustaendig: 0, wechselnd: true },
+  { id: 6, name: "Dusche putzen", raum: "Bad", punkte: 25, zyklus: 12, zustaendig: 1, wechselnd: true },
+  { id: 7, name: "Waschbecken putzen", raum: "Bad", punkte: 15, zyklus: 12, zustaendig: 0, wechselnd: true },
+  { id: 8, name: "Aufräumen", raum: "Wohnzimmer", punkte: 20, zyklus: 30, zustaendig: 0, wechselnd: true },
+  { id: 9, name: "Fenster putzen", raum: "Wohnung", punkte: 25, zyklus: 180, zustaendig: 0, wechselnd: false },
+  { id: 10, name: "Einkaufen", raum: "Wohnung", punkte: 35, zyklus: 14, zustaendig: 0, wechselnd: false },
 ];
 
 const startAusruestung: Ausruestung[] = [
